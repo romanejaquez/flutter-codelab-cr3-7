@@ -1,0 +1,2020 @@
+
+<!doctype html>
+
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, minimum-scale=1.0, initial-scale=1.0, user-scalable=yes">
+  <meta name="theme-color" content="#4F7DC9">
+  <meta charset="UTF-8">
+  <title>Flutter Codelab / Coding Roulette: Full Stack Flutter Apps Workshop (pt.6): Cloud Firestore - Saving Data to Firestore: Withdrawal Feature</title>
+  <link rel="stylesheet" href="//fonts.googleapis.com/css?family=Source+Code+Pro:400|Roboto:400,300,400italic,500,700|Roboto+Mono">
+  <link rel="stylesheet" href="//fonts.googleapis.com/icon?family=Material+Icons">
+  <link rel="stylesheet" href="https://storage.googleapis.com/codelab-elements/codelab-elements.css">
+  <style>
+    .success {
+      color: #1e8e3e;
+    }
+    .error {
+      color: red;
+    }
+  </style>
+</head>
+<body>
+  <google-codelab-analytics gaid="UA-49880327-14"></google-codelab-analytics>
+  <google-codelab codelab-gaid=""
+                  id="flutter-codelab-cr3-7"
+                  title="Flutter Codelab / Coding Roulette: Full Stack Flutter Apps Workshop (pt.6): Cloud Firestore - Saving Data to Firestore: Withdrawal Feature"
+                  environment="web"
+                  feedback-link="https://romanjustcodes.web.app">
+    
+      <google-codelab-step label="Overview" duration="0">
+        <h2 is-upgraded>What You&#39;ll Build in this Workshop:</h2>
+<ul>
+<li>Receiving data from Cloud Firestore in a real-time fashion</li>
+<li>Adding and Removing Items to / from Cloud Firestore and seeing changes in real-time</li>
+<li>Learn about data streams, single-subscription stream, and the StreamBuilder Widget</li>
+</ul>
+<p>This is what we&#39;ll be accomplishing on this codelab:</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/3960838804384620.png"></p>
+<p>The following is a schematics view of what we&#39;ll be tackling as far as UI goes:</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/2470fa7255bace7d.png"></p>
+<p>And when there are no expenses to display, we will put up a special widget that illustrates this scenario:</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/cc0162bad0759f0f.png"></p>
+<p>Let&#39;s proceed!</p>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Updating the FlutterBankService: Add functionality to get expenses" duration="0">
+        <p>Let&#39;s start from the services side of things. We will leverage the existing <strong>FlutterBankService</strong> to add some additional functionality required to pull the data from Firebase as a continuous, real-time stream of data to our app.</p>
+<aside class="special"><p>During the development of this feature, it is advised to set this app to always land on the expenses page via setting the <strong>home</strong> property of the <strong>FlutterBankApp</strong> widget to be the <strong>FlutterBankExpenses</strong> page, as well as hard-coding the unique user id of the user you are simulating the transactions against; that way you won&#39;t have to log in and perform navigation for every single change you do - just like in the previous codelabs.</p>
+</aside>
+<h2 is-upgraded>Creating an Expense model class</h2>
+<p>First things first, when we consume the expense data from Firestore, we&#39;d like to package it in such a way that we can manipulate it in a strongly-typed way, so we&#39;ll create a model class that encapsulates the expense data received. Let&#39;s create a PODO model class called <strong>Expense</strong>, with the appropriate fields:</p>
+<ul>
+<li>name: type <strong>String</strong>, holds the name of the expense</li>
+<li>amount: type <strong>double</strong>, the dollar amount of the expense</li>
+<li>timestamp: type <strong>String</strong>, we&#39;ll use it to display a date after parsing the timestamp into a Date</li>
+<li>id: the unique ID of the document in Firebase</li>
+</ul>
+<p>Add a constructor that hydrates these values, as well as a corresponding <strong>fromJson</strong> factory method to map the JSON values received as a <strong>Map</strong> into these fields as well. Your whole class should look like this:</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/c436b276f66bd72c.png"></p>
+<p>In our <strong>FlutterBankService</strong> service, create a new method called <strong>getExpenses</strong>, which takes a <strong>BuildContext</strong> as a parameter and returns a <strong>List</strong> of <strong>Expense</strong> objects, wrapped inside a <strong>Stream</strong>, as such:</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/4df4d9c4e5c15145.png"></p>
+<aside class="special"><p>In Dart, a <a href="https://api.dart.dev/stable/2.16.1/dart-async/Stream-class.html" target="_blank"><strong>Stream</strong></a> is a <strong><em>sequence</em></strong> of results. You <strong>listen</strong> on a stream to get notified of the results (both data and errors) and even of the stream shutting down. You can even pause while listening or stp listening to the stream before it is complete.</p>
+</aside>
+<p>We will work with <a href="https://dart.dev/tutorials/language/streams#single-subscription-streams" target="_blank">single-subscription</a> streams in this workshop.</p>
+<p>We will create a <strong>Stream</strong> instance via a <strong>StreamController</strong>, which gives you a new stream and a way to add events to the stream at any point, to which you can attach listeners, as well.</p>
+<p>A <a href="https://dart.dev/articles/libraries/creating-streams#using-a-streamcontroller" target="_blank"><strong>StreamController</strong></a> works well if the events come from a different part of your program, you want to control when and how the messages are fed into the stream, and so on. In our case, we want to receive the stream of data from Firestore, and further manipulate it (map it to our own <strong>Expense</strong> model) before being put back into the stream.</p>
+<p>Inside of our newly created <strong>getExpenses</strong> method, use the <strong>context</strong> to extract the <strong>userId</strong> from the <strong>LoginService</strong>&#39;s <strong>getUserId</strong> since we want to add / remove expenses from a separate collection by manipulating documents associated to the logged in user id by their unique UID:</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/92bb463c295c90f7.png"></p>
+<p>Now let&#39;s proceed and create an instance of <strong>StreamController</strong>; make it so that the type of event data it receives is the same type as the <strong>Stream</strong> returned by this method: a <strong>List</strong> of <strong>Expense</strong> objects. Then, out of the <strong>StreamController</strong>, return the <strong>stream</strong> that it generates; that way when we return the stream from this method, other clients can subscribe to it, and we can use the <strong>StreamController</strong> to notify them via that reference:</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/99e3c013f6947666.png"></p>
+<p>Let&#39;s make the call to pull the data from Firestore, from the same <strong>accounts</strong> collection, inside of which we should have a unique document (per logged in user), and under which we&#39;ll add a new subcollection to store all expenses per user, which we&#39;ll call <strong>user_expenses</strong>, against which you&#39;ll invoke a method called <strong>snapshots</strong>.</p>
+<aside class="special"><p>A call to <strong>snapshots</strong> returns a data stream - a reference through which you can subscribe and listen for incoming data, while a call to <strong>get()</strong> makes a one-time read of the data in one single shot without subscribing.</p>
+</aside>
+<p>After calling the <strong>snapshots</strong> method on the subcollection <strong>user_expenses</strong> (which returns a <strong>Stream</strong>), now we need to &#34;listen&#34; on that stream for incoming data - yeah, there&#39;s a method called just that - <strong>listen</strong>. This method gets a few callbacks, the first one being the one that receives the data as it comes in, in an asynchronous way. This callback receives a <strong>QuerySnapshot</strong> or a reference to a collection.</p>
+<p>Your code should look like this so far:</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/49013a42c9e9c22e.png"></p>
+<p>Let&#39;s create a collection that will hold the instances of <strong>Expense</strong> objects we receive via the stream; add a property at the top of the <strong>FlutterBankService</strong>, as such:</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/853bc00415190ea1.png"></p>
+<p>We&#39;ll use this collection to temporarily hold the mapped data before putting it on the stream returned by the <strong>StreamController</strong>, assuming we have a listener on the other end expecting these values. We&#39;ll do that in a minute.</p>
+<p>Inside of the <strong>listen</strong> callback that receives the data streamed, we will capture the collection snapshot, loop through the available documents in the snapshop, map each of the documents into an <strong>Expense</strong> object, put it in the collection, and then we&#39;ll put the collected values into the stream. Make sure to always do a <strong>.clear()</strong> on the collection, just to make sure we are always capturing the updated values from the stream as such:</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/c9694fe8b18294cd.png"></p>
+<p>And with that, we&#39;ve taken care of the <strong>getExpenses</strong> method, on which we need to now listen on the stream. How do we do that from a widget? You&#39;ll see in just a moment.</p>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Creating the FlutterBankExpenses widget page" duration="0">
+        <p>Let&#39;s now create the page that will encapsulate the displaying / adding / removing of the expenses information.</p>
+<p>Create a custom widget class called <strong>FlutterBankExpenses</strong> that extends <strong>StatelessWidget</strong> and return for now just a <strong>Scaffold</strong> with a white background, as such:</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/6d35e0ea1cc8b5bd.png"></p>
+<p>Add the <strong>AppBar</strong> as usual:</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/b1bc3daeed2610f.png"></p>
+<p>As the body of the <strong>Scaffold</strong>, add a <strong>Container</strong> with 20px padding all inside, with a <strong>Column</strong> widget as its child, and its children center-aligned, as such:</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/2be7918ee5a97d1a.png"></p>
+<p>Let&#39;s start by adding the header to this page as the first child of the <strong>Column</strong> widget, with the proper values set on it:</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/f7b3f85b78a83b31.png"></p>
+<p>Right under the <strong>AccountActionHeader</strong> inside the <strong>Column</strong> widget, add an <strong>Expanded</strong> widget, with a placeholder <strong>Container</strong> as its child:</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/1cc21692ade2e3fc.png"></p>
+<p>Run what we have so far through DartPad and see what you get in the preview:</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/f9781aeee03b65bd.png"></p>
+<p>Great! Things are starting to show on the screen.</p>
+<p>Let&#39;s wrap up the vertical layout by adding a <strong>FlutterBankMainButton</strong> with the label &#34;Add Expense&#34; and an empty callback, preceded by a <strong>SizedBox</strong> with 20px height, right under the <strong>Expanded</strong> widget. Check out the build method after adding these two widgets:</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/64cb6bb1496d8522.png"></p>
+<p>Run it once again on DartPad:</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/a15650648c397ed6.png"></p>
+<p>Looking good!</p>
+<p>For the next few sections, we&#39;ll focus on the widgets we&#39;ll be laying out inside the <strong>Expanded</strong> widget, which constitutes the main region in this page. Let&#39;s proceed!</p>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Using the StreamBuilder Widget" duration="0">
+        <p>After implementing the <strong>getExpenses</strong> method earlier in the <strong>FlutterBankService</strong> (which returns a <strong>Stream</strong>) we need to find a way to call <strong>listen</strong> on that stream so we can receive the values being streamed to us in an asynchronous fashion. What can we use? <strong>StreamBuilder</strong> widget to the rescue!!</p>
+<aside class="special"><p>A <a href="https://api.flutter.dev/flutter/widgets/StreamBuilder-class.html" target="_blank"><strong>StreamBuilder</strong></a> widget is a widget that builds itself based on the latest snapshot of interaction with a <strong>Stream</strong> - exactly what we&#39;re looking for. We want this widget to rebuild itself as data comes through the stream; what I love about this widget is that this widget (behind the scenes) is wiring itself up to &#34;listen&#34; to the stream (as if hooking itself up to the <strong>listen</strong> method of the stream directly), handing the receiving of data, errors and stream closing, and even disposing of the stream automatically - all taken care of for us by this widget.</p>
+</aside>
+<p>Inside the <strong>build</strong> method of the <strong>FlutterBankExpenses</strong> page widget, add a reference to the <strong>FlutterBankService</strong> since we need it to tap into the expenses retrieval functionality, as such:</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/475c80b9e16372ac.png"></p>
+<p>Inside the <strong>Expanded</strong> widget, add a <strong>StreamBuilder</strong> widget as its child - make it type <strong>List</strong> of <strong>Expense</strong>, with the following parameters:</p>
+<ul>
+<li>stream: assign the <strong>Stream</strong> returned by the <strong>FlutterBankService</strong>&#39;s <strong>getExpenses</strong> method, passing the <strong>BuildContext</strong> to it</li>
+<li>builder: a callback method that takes a context and a <strong>snapshot</strong> (similar to listening on the stream and hooking up to the <strong>listen</strong> method, passing the <strong>onData</strong> callback and receiving a <strong>snapshot</strong> of the Firestore resource being listened on).</li>
+</ul>
+<p>Your code should look like this:</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/7ad70779f509f385.png"></p>
+<p>Inside the <strong>StreamBuilder</strong>&#39;s <strong>builder</strong> method, just like the other instances where we handled the <strong>ConnectionState</strong> of a snapshot (i.e. like in a <strong>FutureBuilder</strong>), let&#39;s check for whether there&#39;s data in the snapshot by querying the <strong>snapshot.hasData</strong> property and thus displaying our custom <strong>FlutterBankLoading</strong> widget, as well as checking for an error present in the snapshot by querying the <strong>snapshot.hasError</strong> and displaying the <strong>FlutterBankError</strong> widget, as follows:</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/9a799b2ccd7d5393.png"></p>
+<p>Now, let&#39;s take care of the &#34;happy path&#34; in which the data has arrived successfully.</p>
+<p>Proceed to extract the data in question out of the <strong>snapshot.data</strong> and cast it as a <strong>List</strong> of <strong>Expense</strong> objects. The call can be successful and returns a collection, but the collection might be empty (no expenses saved). Let&#39;s handle that by just checking whether the collection is empty, and thus displaying a custom widget that we&#39;ll call <strong>FlutterBankNoExpenses</strong> (doesn&#39;t exist yet - we&#39;ll create it in just a second), as such:</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/1a31875261fe44ce.png"></p>
+<p>Go outside of this class and create another custom widget called <strong>FlutterBankNoExpenses</strong> as a <strong>StatelessWidget</strong>, and drop the following structure in its <strong>build</strong> method:</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/d0c420f9e601d972.png"></p>
+<p>Back on the <strong>FlutterBankExpenses</strong>, right at the same spot where we were, make sure things are in order and no errors show, since our newly created widget is in place now:</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/ee63d0820597d025.png"></p>
+<p>All cases taken care of, now let&#39;s assume there is indeed data, so let&#39;s consume it. Return out of this method a <strong>ListView</strong> since we&#39;ll display it in a vertically-scrollable list fashion, so create the <strong>ListView</strong> using the provided <strong>builder</strong> constructor; again this constructor is appropriate for list views with a large (or infinite) number of children because the builder is called only for those children that are actually visible through the screen&#39;s viewport.</p>
+<p>Populate the following properties of <strong>ListView.builder</strong>:</p>
+<ul>
+<li>padding: 10px all around</li>
+<li>itemCount: use the <strong>expenses.length</strong> to feed this value</li>
+<li>itemBuilder: callback executed per item in the <strong>expenses</strong> collection and renders the item in the current iteration. Pull an object out of the <strong>expenses</strong> collection by using the <strong>index</strong> provided to the callback and store that reference in a variable. Use the reference to pull the <strong>.name</strong> and display it on a <strong>TextField</strong>, just as an initial test:</li>
+</ul>
+<p class="image-container"><img alt="Expenses Screen" src="img/8e22cb24b0091298.png"></p>
+<p>If you take this code for a spin on DartPad, you should get this:</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/734b7253a5219306.png"></p>
+<p>Which is correct because indeed there are no items in the subcollection <strong>user_expenses</strong>.</p>
+<p>Let&#39;s actually go to the <strong>Firebase Console</strong> to add some items and see them show through.</p>
+<p>On the <strong>Firebase Console</strong>, go to the <strong>Firestore</strong> database; find the document associated with the user id we are working with, and click on <strong>Start collection</strong>:</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/83c03d6faa782b91.png"></p>
+<p>When prompted, name it <strong>user_expenses</strong>. Click <strong>Next</strong>:</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/8e5d79dd7d35aac.png"></p>
+<p>Add its first document using the following fields (must match the <strong>Expense</strong> model class we created earlier):</p>
+<ul>
+<li>name: type <strong>string</strong>, the name of the expense (i.e. groceries, shopping)</li>
+<li>amount: type <strong>number</strong>, the dollar amount of the expense</li>
+<li>timestamp: type <strong>string</strong>, an ISO date string (i.e. 2022-02-10T23:42:57.095)</li>
+</ul>
+<p>Your document data should look like the screenshot below. Verify and hit <strong>Save</strong>:</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/c159169ce61ce507.png"></p>
+<p>And just like magic, you will see the data appear on DartPad as in the screenshot below:</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/501703fdd1550bbd.png"></p>
+<aside class="special"><p>You can leave DartPad open and add another document, and you will see the new document flash before your very eyes! Neat, huh? That&#39;s the true power of Firestore!</p>
+</aside>
+<p>Now that we have Flutter hooked up to receive a data stream via a single-subscription, let&#39;s proceed and add more pieces to it.</p>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Create the Expense Card" duration="0">
+        <p>We want to be able now to display the expense information in a more neatly presented way, using a custom card widget that we&#39;ll call <strong>ExpenseCard</strong>. This is what we&#39;ll be tackling:</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/70982edb45609abe.png"></p>
+<p>Let&#39;s proceed right away by creating a custom widget called <strong>ExpenseCard</strong> that extends <strong>StatelessWidget</strong>. Add two properties that will be fed via its constructor: one to pass an <strong>Expense</strong> object (called <strong>expense</strong>), the other for passing a callback that will trigger the expense deleting workflow (called <strong>onDeleteExpense</strong>), as follows:</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/4279359bf7a0b6c8.png"></p>
+<p>Inside our placeholder <strong>Container</strong> widget, let&#39;s add some properties in order to reuse it and make it the foundation of our card: add 20px for padding and margin (alla round); make its background white, with a 25px border radius as well as a shadow. Check out how the <strong>build</strong> method ended up being:</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/24191db75e65d95e.png"></p>
+<p>As a direct child of the <strong>Container</strong> widget, add a <strong>Row</strong> widget, with its items stretched to the sides horizontally (<strong>MainAxisAlignment.spaceBetween</strong>) and vertically centered (<strong>CrossAxisAlignment.center</strong>):</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/13ad533d04ac87b2.png"></p>
+<p>Let&#39;s populate the items inside the <strong>Row</strong>.</p>
+<aside class="special"><p>For the next few sections, we&#39;ll be focused on the <strong>Row</strong> widget for brevity.</p>
+</aside>
+<p>Add a <strong>Column</strong> widget with its children aligned to the left; add its first child: a <strong>Text</strong> widget (with text left aligned, 12px font size) and populate its content from the <strong>name</strong> property of the <strong>expense</strong> object injected via the constructor:</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/61c1f3f34cde948c.png"></p>
+<p>Inside that same column, add a <strong>Row</strong> widget, since we want to line its children horizontally; add an <strong>Icon</strong> widget (<strong><em>Icons.monetization_on</em></strong>) with the mainThemeColor applied and 20px in size; Next to it, add a <strong>Text</strong> widget, feeding into it the <strong>amount</strong> from the <strong>expense</strong> object; use the <strong>double</strong>&#39;s <strong>toStringAsFixed</strong> to set two decimal places; color black and 25px font size:</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/fd335ec62c37bf0c.png"></p>
+<p>Last in the <strong>Column</strong>, we&#39;ll add the timestamp provided in the <strong>expense</strong> object as a properly formatted date inside a <strong>Text</strong> widget, using the <strong>DateFormat</strong>&#39;s utility methods for taking a <strong>DateTime</strong>, parsing it and formatting it, as follows:</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/78e9bc17addc64a0.png"></p>
+<p>Now let&#39;s get out of this column, and up to the enclosing <strong>Row</strong> widget, and add the last item in the <strong>Row</strong> - the ability to trigger the expense deleting workflow by adding an <strong>IconButton</strong>.</p>
+<p>Add an <strong>IconButton</strong> widget, surrounded by a <strong>Material</strong> widget to give it some of its &#34;material-y&#34; behavior; to clip it as a circle, surround the <strong>Material</strong> widget inside a <strong>ClipOval</strong> (another approach could be to apply  a border radius and a clip behavior to the <strong>Material</strong> but this approach is quick).</p>
+<p>Inside the <strong>IconButton</strong>, set its <strong>icon</strong> property to an <strong>Icon</strong> widget (*<strong>Icons.delete_forever</strong>) in grey; set its <strong>onPressed</strong> event to an empty callback for now.</p>
+<p>Your code should look like this:</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/a9e26d69183cb681.png"></p>
+<p>We&#39;ve coded a lot! Let&#39;s start hooking it up to the <strong>FlutterBankExpense</strong> to start seeing it. We&#39;ll wrap it up in a minute.</p>
+<p>Back on the <strong>FlutterBankExpense</strong> widget, right where we left off (inside the <strong>ListView.builder</strong> method), replace the existing <strong>Text</strong> widget by our newly created <strong>ExpenseCard</strong>, passing the expected values:</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/3c69bcff2fe577ea.png"></p>
+<p>Running it through DartPad to test it out, and you should see a nice looking card for the expense data to show through. We&#39;re making amazing progress!</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/c38c5a718fb5e757.png"></p>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Add an expense to the list" duration="0">
+        <p>Let&#39;s add the functionality to add additional expenses to the existing list.</p>
+<aside class="special"><p>We&#39;ll only use this method as a sample of how you can send data back to Firestore for storing for then later viewing it in real-time showing through the stream. We&#39;ve gone over this in previous labs, so we&#39;ll just breeze through.</p>
+</aside>
+<p>Go to the <strong>FlutterBankService</strong> and add a new method called <strong>addExpense</strong> which takes a <strong>BuildContext</strong> and returns <strong>void</strong>:</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/e0da5991c165d73.png"></p>
+<p>Use the provided context to fetch the <strong>LoginService</strong> and grab the user Id of the currently logged in user:</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/d9a38c85a291cf2.png"></p>
+<p>From the <strong>FirebaseFirestore</strong> instance, query the <strong>accounts</strong> collection, specify the document by <strong>userId</strong>, and fetch the subcollection called <strong>user_expenses</strong> and storee it in a <strong>CollectionReference</strong> variable called <strong>expensesCollection</strong>:</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/779fee9582e10ee1.png"></p>
+<p>To add documents to an existing subcollection, just call the <strong>add</strong> method on the collection, passing a dictionary with the expected values; in our case we&#39;ll provide the following:</p>
+<ul>
+<li>amount: we&#39;ll hard-code it to 100 for now, but should be a number</li>
+<li>timestamp: we&#39;ll use a <strong>DateTime.now().toIso8601String()</strong> formatted date, for backwards compatibility</li>
+<li>name: the name of the expense (i.e. ‘Sample Expense&#39;)</li>
+</ul>
+<p>Your code should look like this:</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/1d58de121fe64312.png"></p>
+<p>For testing purposes, let&#39;s hook up some success and error callbacks to the <strong>add</strong> method, and let&#39;s print out a message to see their execution, as such:</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/85d0ddef8944a10f.png"></p>
+<p>With this in place, let&#39;s go back to the <strong>FlutterBankExpenses</strong> page and locate the button all the way at the bottom of its widget structure, the <strong>FlutterBankMainButton</strong> &#34;Add Expense&#34;; inside its <strong>onTap()</strong> event, call the <strong>FlutterBankService</strong>&#39;s <strong>addExpense</strong> method, passing the context to it (the method we just created):</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/412b53cf069ddeea.png"></p>
+<p>That should be all set. Let&#39;s do a test and hit the &#34;Add Expense&#34; method a few times; you should notice that the list gets populated with bogus expense documents (for testing):</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/3dc1b68241269a35.gif"></p>
+<p>Looking good! Now we have to incorporate a way to get rid / delete all of these bogus expenses we added - don&#39;t want to run up my credit card bill!</p>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Deleting an existing expense" duration="0">
+        <p>Let&#39;s first add the functionality in the <strong>FlutterBankService</strong> to be able to delete an expense entry from the list.</p>
+<p>Go to the <strong>FlutterBankService</strong>, and add a new method called <strong>deleteExpense</strong>, to which we&#39;ll pass the <strong>BuildContext</strong> as well as the <strong>id</strong> of the expense in question (as always, to fetch the user id); out of the sub-collection <strong>user_expenses</strong>, then get the document associated with the expense id supplied; out of the obtained reference, just perform a call to the <strong>delete</strong> method, as such:</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/e485ba3ec24d1a51.png"></p>
+<p>For debugging purposes, you can hook up a success an an error callback / handler to the <strong>delete</strong> method, as such:</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/63fc92ddef7a1827.png"></p>
+<p>With this in place, let&#39;s go back to the <strong>Expenses</strong> card real quick; make sure that the <strong>IconButton</strong>&#39;s onPressed event is invoking the <strong>onDeleteExpense</strong> callback method supplied via the constructor, as such:</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/fc3d805af74780a.png"></p>
+<p>Sweet, now let&#39;s go back to the <strong>FlutterBankExpenses</strong> widget page, and inside the <strong>ExpenseCard</strong> being looped on inside the <strong>ListView</strong>, go to the provided  handler for the <strong>onDeleteExpense</strong> and right here, tap into the <strong>FlutterBankService</strong>&#39;s <strong>deleteExpense</strong> method, passing the context and the id of the corresponding expense, as follows:</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/dc15a9a507d5f82c.png"></p>
+<p>With that in place, I believe now we are ready to test it by trying to remove some expenses out of the list by tapping on the trash can at the end of every expense row:</p>
+<p class="image-container"><img alt="Expenses Screen" src="img/7f2c56f0e8d8c821.gif"></p>
+<p>The cool thing is that as soon as we click on the delete icon, the data gets wiped out of Cloud Firestore and almost instantaneously the change gets reflected locally with lightning-fast speed. Love how it came out!</p>
+<aside class="special"><p>Make sure to take the whole workflow for a spin, by restoring the hard-coded user ids used as well as restoring the splash page back into the <strong>FlutterBankApp</strong> since these temporary changes were for development purposes only.</p>
+</aside>
+<p>And with that, we are fully done with this workshop! Kudos to you for making it all the way to this codeelab; I strongly encourage you to take this app, make it your own, and take it to the next level; hopefully you&#39;ll get inspired to continue building  your own app and eventually publish it.</p>
+<p>Thanks again and hope you&#39;ve learned a lot from this experience.</p>
+<p>See you on the next one!</p>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Wrap-up" duration="0">
+        <p>In this codelab, we accomplished the following:</p>
+<ul>
+<li>Wrapped up the &#34;My Expenses&#34; page (<strong>FlutterBankExpenses</strong> page)</li>
+<li>Leverage existing custom widgets previously created</li>
+<li>Learned about data streams and the StreamBuilder widget</li>
+<li>Build up on the FlutterBankService to build additional functionality</li>
+</ul>
+<h3 is-upgraded>Please don&#39;t forget to follow me on social media:</h3>
+<ul>
+<li>On Twitter (<a href="https://www.twitter.com/drcoderz" target="_blank">@drcoderz</a>)</li>
+<li>On YouTube (<a href="https://www.youtube.com/channel/UCKsp3r1ERjCpKJtD2n5WtPg" target="_blank">Roman Just Codes</a>)</li>
+<li>On My <a href="https://romanjustcodes.web.app/#/home" target="_blank">Personal Portfolio</a></li>
+<li>On <a href="https://medium.com/@romanejaquez" target="_blank">Medium</a></li>
+<li>On <a href="https://www.linkedin.com/in/roman-jaquez-8941a424/" target="_blank">LinkedIn</a></li>
+</ul>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Complete Code" duration="0">
+        <pre><code language="language-flutter" class="language-flutter">import &#39;dart:async&#39;;
+import &#39;package:flutter/material.dart&#39;;
+import &#39;package:google_fonts/google_fonts.dart&#39;;
+import &#39;package:firebase_core/firebase_core.dart&#39;;
+import &#39;package:cloud_firestore/cloud_firestore.dart&#39;;
+import &#39;package:firebase_auth/firebase_auth.dart&#39;;
+import &#39;package:provider/provider.dart&#39;;
+import &#39;package:intl/intl.dart&#39;;
+
+void main() async {
+
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  await Firebase.initializeApp(
+    options: const FirebaseOptions(
+      apiKey: &#34;AIzaSyBwSM_bH2-kid-TtJPxZUo0Xw_QO8kgsU8&#34;,
+      authDomain: &#34;flutter-bank-app-6ec93.firebaseapp.com&#34;,
+      projectId: &#34;flutter-bank-app-6ec93&#34;,
+      storageBucket: &#34;flutter-bank-app-6ec93.appspot.com&#34;,
+      messagingSenderId: &#34;182673651632&#34;,
+      appId: &#34;1:182673651632:web:aad3511575ff2677108875&#34;
+    )
+  );
+
+  runApp(
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(
+          create: (_) =&gt; LoginService(),
+        ),
+        ChangeNotifierProvider(
+          create: (_) =&gt; FlutterBankService(),
+        ),
+        ChangeNotifierProvider(
+          create: (_) =&gt; DepositService(),
+        ),
+        ChangeNotifierProvider(
+          create: (_) =&gt; WithdrawalService(),
+        ),
+      ],
+      child: FlutterBankApp()
+    )
+  );
+}
+
+class FlutterBankApp extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      theme: ThemeData(
+        textTheme: GoogleFonts.poppinsTextTheme(
+          Theme.of(context).textTheme
+        )
+      ),
+      debugShowCheckedModeBanner: false,
+      home: FlutterBankSplash() 
+    );
+  }
+}
+
+class FlutterBankSplash extends StatelessWidget {
+  
+  @override
+  Widget build(BuildContext context) {
+
+    Future.delayed(const Duration(seconds: 2), () {
+       Navigator.of(context).push(
+        MaterialPageRoute(builder: (context) =&gt; FlutterBankLogin())
+       );   
+     });
+
+    return Scaffold(
+      backgroundColor: Utils.mainThemeColor,
+      body: Stack(
+        children: const [
+          Center(
+            child: Icon(Icons.savings, color: Colors.white, size: 60)
+          ),
+          Center(
+            child: SizedBox(
+              width: 100,
+              height: 100,
+              child: CircularProgressIndicator(
+                strokeWidth: 8,
+                valueColor: AlwaysStoppedAnimation&lt;Color&gt;(Colors.white)
+              )
+            )
+          )
+        ],
+      )
+    );
+  }
+}
+
+class FlutterBankLogin extends StatefulWidget {
+  @override
+  FlutterBankLoginState createState() =&gt; FlutterBankLoginState();
+}
+
+class FlutterBankLoginState extends State&lt;FlutterBankLogin&gt;{
+
+  TextEditingController usernameController = TextEditingController();
+  TextEditingController passwordController = TextEditingController();
+
+  @override
+  Widget build(BuildContext context) {
+
+    LoginService loginService  = Provider.of&lt;LoginService&gt;(context, listen: false);
+
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: Container(
+        padding: const EdgeInsets.all(30),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                border: Border.all(
+                  width: 7,
+                  color: Utils.mainThemeColor
+                ),
+                borderRadius: BorderRadius.circular(100)
+              ),
+              child: const Icon(Icons.savings, color: Utils.mainThemeColor, size: 45)
+            ),
+            const SizedBox(height: 30),
+            const Text(&#39;Welcome to&#39;, style: TextStyle(color: Colors.grey, fontSize: 15)),
+            const Text(&#39;Flutter\nSavings Bank&#39;, 
+            style: TextStyle(color: Utils.mainThemeColor, fontSize: 30)),
+            Expanded(
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center, 
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text(&#39;Sign Into Your Bank Account&#39;, 
+                         textAlign: TextAlign.center, 
+                         style: TextStyle(color: Colors.grey, fontSize: 12)
+                    ),
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.all(5),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(50)
+                      ),
+                      child: TextField(
+                        onChanged: (text) {
+                          setState(() {});
+                        },
+                        decoration: const InputDecoration(
+                          border: InputBorder.none,
+                          prefixIcon: Icon(Icons.email, color: Utils.mainThemeColor),
+                          focusedBorder: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          errorBorder: InputBorder.none,
+                          disabledBorder: InputBorder.none,
+                          contentPadding: EdgeInsets.only(
+                            left: 20, bottom: 11, top: 11, right: 15
+                          ),
+                          hintText: &#34;Email&#34;
+                        ),
+                        style: const TextStyle(fontSize: 16),
+                        controller: usernameController
+                      ) 
+                    ),
+                    const SizedBox(height: 20),
+                    
+                    // password Container wrapper 
+                    Container(
+                      padding: const EdgeInsets.all(5),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(50)
+                      ),
+                      child: TextField(
+                        onChanged: (text) {
+                          setState(() {});
+                        },
+                        obscureText: true,
+                        obscuringCharacter: &#34;*&#34;,
+                        decoration: const InputDecoration(
+                          prefixIcon: Icon(Icons.lock, color: Utils.mainThemeColor),
+                          border: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          errorBorder: InputBorder.none,
+                          disabledBorder: InputBorder.none,
+                          contentPadding: EdgeInsets.only(
+                            left: 15, bottom: 11, top: 11, right: 15
+                          ),
+                          hintText: &#34;Password&#34;
+                        ),
+                        controller: passwordController,
+                        style: const TextStyle(fontSize: 16),
+                      )
+                    ),
+                    Consumer&lt;LoginService&gt;(
+                      builder: (context, lService, child) {
+
+                        String errorMsg = lService.getErrorMessage();
+                      
+                        if (errorMsg.isEmpty) {
+                          return const SizedBox(height: 40);
+                        }
+
+                        return Container(
+                          padding: const EdgeInsets.all(10),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.warning, color: Colors.red),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  errorMsg, 
+                                  style: const TextStyle(color: Colors.red)
+                                )
+                              )
+                            ]
+                          )
+                        );
+                      }
+                    )
+                  ]
+                )
+              )
+            ),
+            FlutterBankMainButton(
+              label: &#39;Sign In&#39;,
+              enabled: validateEmailAndPassword(),
+              onTap: () async {
+                var username = usernameController.value.text;
+                var pwd = passwordController.value.text;
+
+                bool isLoggedIn = await loginService.signInWithEmailAndPassword(username, pwd);
+
+                if (isLoggedIn) {
+                  usernameController.clear();
+                  passwordController.clear();
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (context) =&gt; FlutterBankMain())
+                  );
+                }
+              }
+            ),
+            const SizedBox(height: 10),
+            FlutterBankMainButton(
+              label: &#39;Register&#39;,
+              icon: Icons.account_circle,
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (context) =&gt; FlutterAccountRegistration())
+                );
+              },
+              backgroundColor: Utils.mainThemeColor.withOpacity(0.05),
+              iconColor: Utils.mainThemeColor,
+              labelColor: Utils.mainThemeColor
+            ) 
+          ]
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    usernameController.dispose();
+    passwordController.dispose();
+    super.dispose();
+  }
+
+  bool validateEmailAndPassword() {
+    return usernameController.value.text.isNotEmpty &amp;&amp; 
+      passwordController.value.text.isNotEmpty 
+        &amp;&amp; Utils.validateEmail(usernameController.value.text);
+  }
+}
+
+class FlutterAccountRegistration extends StatefulWidget {
+  @override
+  FlutterAccountRegistrationState createState() =&gt; FlutterAccountRegistrationState();
+}
+
+class FlutterAccountRegistrationState extends State&lt;FlutterAccountRegistration&gt; {
+
+  TextEditingController usernameController = TextEditingController();
+  TextEditingController passwordController = TextEditingController();
+  TextEditingController confirmPasswordController = TextEditingController();
+  
+  @override
+  void dispose() {
+    usernameController.dispose();
+    passwordController.dispose();
+    confirmPasswordController.dispose();
+    super.dispose();
+  }
+  
+  @override
+  Widget build(BuildContext context) {
+
+    LoginService loginService = Provider.of&lt;LoginService&gt;(context, listen: false);
+
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Utils.mainThemeColor),
+        backgroundColor: Colors.transparent,
+        title: const Icon(Icons.savings, color: Utils.mainThemeColor, size: 40),
+        centerTitle: true
+      ),
+      body: Container(
+        padding: const EdgeInsets.all(30),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // title
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 40),
+                    child: const Text(&#39;Create New Account&#39;, 
+                      style: TextStyle(color: Utils.mainThemeColor, fontSize: 20)
+                    )
+                  ),         
+                  // email field
+                  Utils.generateInputField(&#39;Email&#39;, Icons.email, 
+                    usernameController, 
+                    false, (text) {
+                      setState(() {});
+                  }),
+                  // password field
+                  Utils.generateInputField(&#39;Password&#39;, Icons.lock, 
+                    passwordController, 
+                    true, (text) {
+                      setState(() {});
+                  }),
+                  // password confirmation field
+                  Utils.generateInputField(&#39;Confirm Password&#39;, Icons.lock, 
+                    confirmPasswordController, 
+                    true, (text) {
+                      setState(() {});
+                  }),
+                ]
+              )
+            ),
+            FlutterBankMainButton(
+              label: &#39;Register&#39;,
+              enabled: validateFormFields(),
+              onTap: () async {
+                String username = usernameController.value.text;
+                String pwd = passwordController.value.text;
+
+                bool accountCreated = 
+                    await loginService.createUserWithEmailAndPassword(username, pwd);
+
+                if (accountCreated) {
+                  Navigator.of(context).pop();
+                }
+              }
+            )
+          ]
+        )
+      )
+    );
+  }
+
+  bool validateFormFields() {
+    return Utils.validateEmail(usernameController.value.text) &amp;&amp;
+     usernameController.value.text.isNotEmpty &amp;&amp;
+      passwordController.value.text.isNotEmpty &amp;&amp;
+      confirmPasswordController.value.text.isNotEmpty &amp;&amp;
+      (passwordController.value.text == confirmPasswordController.value.text);
+  }
+}
+
+class FlutterBankMainButton extends StatelessWidget {
+  
+  final Function? onTap;
+  final String? label;
+  final bool? enabled;
+  final IconData? icon;
+  final Color? backgroundColor;
+  final Color? iconColor;
+  final Color? labelColor;
+  
+  const FlutterBankMainButton({
+    Key? key, this.label, this.onTap, 
+    this.icon, 
+    this.backgroundColor = Utils.mainThemeColor, 
+    this.iconColor = Colors.white,
+    this.labelColor = Colors.white,
+    this.enabled = true })
+  : super(key: key);
+  
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(50),
+          child: Material(
+            color: enabled! ? backgroundColor : backgroundColor!.withOpacity(0.5),
+              child: InkWell(
+              onTap: enabled! ? () {
+                onTap!();
+              } : null,
+              highlightColor: Colors.white.withOpacity(0.2),
+              splashColor: Colors.white.withOpacity(0.1),
+              child: Container(
+                padding: const EdgeInsets.all(15),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(50)
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Visibility(
+                        visible: icon != null,
+                        child: Container(
+                          margin: const EdgeInsets.only(right: 20),
+                          child: Icon(icon, color: iconColor, size: 20),
+                        )
+                      ),
+                      Text(label!, textAlign: TextAlign.center, 
+                        style: TextStyle(
+                          color: labelColor, 
+                          fontWeight: FontWeight.bold
+                        )
+                    )
+                  ]
+                )
+              ),
+            ),
+          ),
+        )
+      ],
+    );
+  }
+}
+
+class FlutterBankDeposit extends StatelessWidget {
+  
+  @override
+  Widget build(BuildContext context) {
+    return WillPopScope(
+      onWillPop: () {
+        FlutterBankService bankService = 
+          Provider.of&lt;FlutterBankService&gt;(context, listen: false);
+        bankService.resetSelections();
+        return Future.value(true);
+      },
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        appBar: AppBar(
+          elevation: 0,
+          iconTheme: const IconThemeData(color: Utils.mainThemeColor),
+          backgroundColor: Colors.transparent,
+          title: const Icon(Icons.savings, color: Utils.mainThemeColor, size: 40),
+          centerTitle: true
+        ),
+        body: Container(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.start,
+            children: [
+              const AccountActionHeader(headerTitle: &#39;Deposit&#39;, icon: Icons.login),
+              Expanded(
+                child: AccountActionSelection(
+                  actionTypeLabel: &#39;To&#39;,
+                  amountChanger: AccountDepositSlider(),  
+                ),
+              ),
+              Consumer&lt;DepositService&gt;(
+                builder: (context, depositService, child) {
+                  return FlutterBankMainButton(
+                    enabled: depositService.checkAmountToDeposit(),
+                    label: &#39;Make Deposit&#39;,
+                    onTap: (depositService.checkAmountToDeposit() ? () {
+                      Navigator.of(context).pushReplacement(
+                        MaterialPageRoute(
+                          builder: (context) =&gt; 
+                            const TransactionCompletionPage(isDeposit: true)
+                          )
+                      );
+                    } : null)
+                  );
+                }
+              )
+            ]
+          )
+        )
+      ),
+    );
+  }
+}
+
+class FlutterBankWithdrawal extends StatelessWidget {
+  
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Utils.mainThemeColor),
+        backgroundColor: Colors.transparent,
+        title: const Icon(Icons.savings, color: Utils.mainThemeColor, size: 40),
+        centerTitle: true
+      ),
+      body: Container(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.start,
+          children: [
+            const AccountActionHeader(headerTitle: &#39;Withdraw&#39;, icon: Icons.logout),
+            Expanded(
+              child: AccountActionSelection(
+                actionTypeLabel: &#39;From&#39;,
+                amountChanger: AccountWithdrawalSlider(),  
+              ),
+            ),
+            Consumer&lt;WithdrawalService&gt;(
+              builder: (context, withdrawalService, child) {
+                return FlutterBankMainButton(
+                  enabled: withdrawalService.checkAmountToWithdraw(),
+                  label: &#39;Make Withdrawal&#39;,
+                  onTap: withdrawalService.checkAmountToWithdraw() ? (){
+                      Navigator.of(context).pushReplacement(
+                        MaterialPageRoute(builder: (context) =&gt; 
+                          const TransactionCompletionPage(isDeposit: false))
+                      );
+                    } : null
+                );
+              }
+            )
+          ]
+        )
+      )
+    );
+  }
+}
+
+class TransactionCompletionPage extends StatelessWidget {
+  
+  final bool? isDeposit;
+  const TransactionCompletionPage({Key? key, this.isDeposit }):
+    super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+
+    FlutterBankService bankService = 
+      Provider.of&lt;FlutterBankService&gt;(context, listen: false);
+
+    Future.delayed(const Duration(seconds: 3), () {
+      bankService.resetSelections();
+      Navigator.of(context).pop();
+    });
+
+    return WillPopScope(
+      onWillPop: () {
+        bankService.resetSelections();
+        return Future.value(true);
+      },
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        appBar: AppBar(
+          elevation: 0,
+          iconTheme: const IconThemeData(color: Utils.mainThemeColor),
+          backgroundColor: Colors.transparent,
+          title: const Icon(Icons.savings, color: Utils.mainThemeColor, size: 40),
+          centerTitle: true
+        ),
+        body: Center(
+          child: FutureBuilder(
+            future: isDeposit! ? 
+              bankService.performDeposit(context) : 
+                bankService.performWithdrawal(context),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) {
+                return FlutterBankLoading();
+              }
+
+              if (snapshot.hasError) {
+                return FlutterBankError();
+              }
+
+              return FlutterBankTransactionCompleted();
+            }
+          )
+        )
+      )
+    );
+  }
+}
+
+class FlutterBankTransactionCompleted extends StatelessWidget {
+
+  @override 
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: const [
+        Icon(Icons.check_circle_outline_outlined, 
+          color: Utils.mainThemeColor, size: 80
+        ),
+        SizedBox(height: 20),
+        Text(&#39;Transaction Completed&#39;, 
+          style: TextStyle(color: Utils.mainThemeColor, fontSize: 20)
+        ),
+      ]
+    );
+  }
+}
+
+class AccountActionSelection extends StatelessWidget {
+
+  final String? actionTypeLabel;
+  final Widget? amountChanger;
+
+  const AccountActionSelection({ 
+    this.actionTypeLabel,
+    required this.amountChanger
+  });
+
+  @override 
+  Widget build(BuildContext context) {
+    return Consumer&lt;FlutterBankService&gt;(
+      builder: (context, service, child) {
+        
+         return FutureBuilder(
+            future: service.getAccounts(context),
+            builder: (context, snapshot) {
+              
+              if (!snapshot.hasData) {
+                return FlutterBankLoading();
+              }
+
+              if (snapshot.hasError) {
+                return FlutterBankError();
+              }
+
+              var selectedAccount = service.getSelectedAccount();
+              List&lt;Account&gt; accounts = snapshot.data as List&lt;Account&gt;;
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.start,
+                children: [
+                  Text(actionTypeLabel!, 
+                    style: const TextStyle(color: Colors.grey, fontSize: 15)
+                  ),
+                  const SizedBox(height: 10),
+                  AccountActionCard(
+                    selectedAccount:  selectedAccount,
+                    accounts: accounts,  
+                  ),
+                  Expanded(
+                    child: Visibility(
+                      visible: selectedAccount != null,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Container(
+                            margin: const EdgeInsets.only(top: 30),
+                            child: const Text(&#39;Current Balance&#39;, 
+                              style: TextStyle(color: Colors.grey)
+                            ),
+                          ),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.monetization_on, 
+                                  color: Utils.mainThemeColor, size: 25
+                                ),
+                              Text(selectedAccount != null ? 
+                                   &#39;\$&#39; + selectedAccount.balance!.toStringAsFixed(2): &#39;&#39;, 
+                                style: const TextStyle(color: Colors.black, fontSize: 35)
+                              )
+                            ]
+                          ),
+                          Expanded(
+                            child: amountChanger!,
+                          )
+                        ]
+                      ),
+                    )
+                  )
+                ]
+              );
+            }
+         );
+      }
+    );
+  }
+}
+
+class AccountDepositSlider extends StatelessWidget {
+
+  @override 
+  Widget build(BuildContext context) {
+    return Consumer&lt;DepositService&gt;(
+      builder: (context, depositService, child) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text(&#39;Amount To Deposit&#39;, style: 
+            TextStyle(color: Colors.grey)),
+            Text(&#39;\$${depositService.amountToDeposit.toInt().toString()}&#39;,
+              style: const TextStyle(color: Colors.black, fontSize: 60)
+            ),
+            Slider(
+              value: depositService.amountToDeposit,
+              max: 1000,
+              activeColor: Utils.mainThemeColor,
+              inactiveColor: Colors.grey.withOpacity(0.5),
+              thumbColor: Utils.mainThemeColor,
+              onChanged: (double value) {
+                depositService.setAmountToDeposit(value);
+              }
+            )                            
+          ]
+        );
+      }
+    );
+  }
+}
+
+class AccountWithdrawalSlider extends StatelessWidget {
+
+  @override
+  Widget build(BuildContext context) {
+
+    return Consumer&lt;FlutterBankService&gt;(
+      builder: (context, bankService, child) {
+        return Consumer&lt;WithdrawalService&gt;(
+          builder: (context, withdrawalService, child) {
+
+            double amountToWithdraw = withdrawalService.amountToWithdraw;
+            double currentBalance = bankService.selectedAccount!.balance!;
+            double actualAmount = amountToWithdraw &gt; currentBalance ? 
+              currentBalance : amountToWithdraw;
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Text(&#39;Amount To Withdraw&#39;, style: 
+                TextStyle(color: Colors.grey)),
+                Text(&#39;\$${actualAmount.toInt().toString()}&#39;,
+                  style: const TextStyle(color: Colors.black, fontSize: 60)
+                ),
+                Slider(
+                  value: actualAmount,
+                  max: bankService.selectedAccount!.balance!,
+                  activeColor: Utils.mainThemeColor,
+                  inactiveColor: Colors.grey.withOpacity(0.5),
+                  thumbColor: Utils.mainThemeColor,
+                  onChanged: (double value) {
+                    withdrawalService.setAmountToWithdraw(value);
+                  }
+                )
+              ]
+            );
+          }
+        );
+      },
+    );
+  }
+}
+
+class AccountActionCard extends StatelessWidget {
+
+  final List&lt;Account&gt;? accounts;
+  final Account? selectedAccount;
+
+  const AccountActionCard({ this.accounts, this.selectedAccount });
+
+  @override
+  Widget build(BuildContext context) {
+
+    FlutterBankService bankService = 
+      Provider.of&lt;FlutterBankService&gt;(context, listen: false);
+
+    return Row(
+      children: List.generate(accounts!.length, (index) {
+        var currentAccount = accounts![index];
+        return Expanded(
+          child: GestureDetector(
+            onTap: () {
+              bankService.setSelectedAccount(currentAccount);
+            },
+            child: Container(
+              margin: const EdgeInsets.all(5),
+              padding: const EdgeInsets.all(15),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(10),
+                color: Colors.white,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 20, offset: const Offset(0.0, 5.0)
+                  )
+                ],
+                border: Border.all(
+                  width: 5,
+                  color: selectedAccount != null &amp;&amp; 
+                    selectedAccount!.id == currentAccount.id ? 
+                      Utils.mainThemeColor : Colors.transparent
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(&#39;${currentAccount.type!.toUpperCase()} ACCT&#39;, 
+                    style: const TextStyle(color: Utils.mainThemeColor)
+                  ),
+                  Text(currentAccount.accountNumber!)
+                ]
+              )
+            ),
+          ),
+        );
+      })
+    );
+  }
+
+
+}
+
+class FlutterBankError extends StatelessWidget {
+
+  @override 
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: const [
+          Icon(Icons.warning_outlined, color: Utils.mainThemeColor, size: 80),
+          SizedBox(height: 20),
+          Text(&#39;Error fetching data&#39;, 
+            style: TextStyle(color: Utils.mainThemeColor, fontSize: 20)
+          ),
+          Text(&#39;Please try again&#39;, 
+            style: TextStyle(color: Colors.grey, fontSize: 12)
+          )
+        ]
+      )
+    );
+  }
+}
+
+class AccountActionHeader extends StatelessWidget {
+
+  final String? headerTitle;
+  final IconData? icon;
+
+  const AccountActionHeader({ this.headerTitle, this.icon });
+  
+  @override 
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      child: Row(
+        children: [
+          Icon(icon, color: Utils.mainThemeColor, size: 30),
+          const SizedBox(width: 10),
+          Text(headerTitle!, 
+            style: const TextStyle(color: Utils.mainThemeColor, fontSize: 20)
+          )
+        ]
+      ),
+    );
+  }
+}
+
+class FlutterBankExpenses extends StatelessWidget {
+  
+  @override
+  Widget build(BuildContext context) {
+
+    FlutterBankService bankService = 
+      Provider.of&lt;FlutterBankService&gt;(context, listen: false);
+
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Utils.mainThemeColor),
+        backgroundColor: Colors.transparent,
+        title: const Icon(Icons.savings, color: Utils.mainThemeColor, size: 40),
+        centerTitle: true
+      ),
+      body: Container(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            AccountActionHeader(
+              icon: Icons.payments,
+              headerTitle: &#39;My Expenses&#39;
+            ),
+            Expanded(
+              child: StreamBuilder&lt;List&lt;Expense&gt;&gt;(
+                stream: bankService.getExpenses(context),
+                builder: (context, snapshot) {
+
+                  if (!snapshot.hasData) {
+                    return FlutterBankLoading();
+                  }
+
+                  if (snapshot.hasError) {
+                    return FlutterBankError();
+                  }
+
+                  var expenses = snapshot.data as List&lt;Expense&gt;;
+                  if (expenses.isEmpty) {
+                    return FlutterBankNoExpenses();
+                  }
+
+                  return ListView.builder(
+                    padding: const EdgeInsets.all(10),
+                    itemCount: expenses.length,
+                    itemBuilder: (context, index) {
+                      var expense = expenses[index];
+                      return ExpenseCard(
+                        expense: expense,
+                        onDeleteExpense: () {
+                          bankService.deleteExpense(context, expense.id!);
+                        },
+                      );
+                    }
+                  );
+                }
+              )
+            ),
+            const SizedBox(height: 20),
+            FlutterBankMainButton(
+              label: &#39;Add Expense&#39;,
+              onTap: () {
+                 bankService.addExpense(context);
+              }
+            )
+          ]
+        )
+      )
+    );
+  }
+}
+
+class FlutterBankNoExpenses extends StatelessWidget {
+
+  @override 
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: const [
+          Icon(Icons.payments, color: Utils.mainThemeColor, size: 50),
+          SizedBox(height: 20),
+          Text(&#39;There are no expenses\nat the moment.&#39;, 
+            textAlign: TextAlign.center, style: TextStyle(color: Utils.mainThemeColor))
+        ]
+      )
+    ); 
+  }
+}
+
+class FlutterBankMain extends StatelessWidget {
+  
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      drawer: Drawer(child: FlutterBankDrawer()),
+      appBar: AppBar(
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Utils.mainThemeColor),
+        backgroundColor: Colors.transparent,
+        title: const Icon(Icons.savings, color: Utils.mainThemeColor, size: 40),
+        centerTitle: true
+      ),
+      body: Container(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          children: [
+            Row(
+              children: const [
+                Icon(Icons.account_balance_wallet, 
+                  color: Utils.mainThemeColor, size: 30),
+                SizedBox(width: 10),
+                Text(&#39;My Accounts&#39;, 
+                  style: TextStyle(color: Utils.mainThemeColor, fontSize: 20)
+                )
+              ]
+            ),
+            const SizedBox(height: 20),
+            Expanded(
+              child: Consumer&lt;FlutterBankService&gt;(
+                builder: (context, bankService, child) {
+                  return FutureBuilder(
+                    future: bankService.getAccounts(context),
+                    builder: (BuildContext context, AsyncSnapshot snapshot) {
+
+                      if (snapshot.connectionState != ConnectionState.done || !snapshot.hasData) {
+                        return FlutterBankLoading();
+                      }
+
+                      List&lt;Account&gt; accounts = snapshot.data as List&lt;Account&gt;;
+                      
+                      if (accounts.isEmpty) {
+                        return Center(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: const [
+                              Icon(Icons.account_balance_wallet, color: Utils.mainThemeColor, size: 50),
+                              SizedBox(height: 20),
+                              Text(&#39;You don\&#39;t have any accounts\nassociated with your profile.&#39;, 
+                              textAlign: TextAlign.center, style: TextStyle(color: Utils.mainThemeColor))
+                            ]
+                          )
+                        );
+                      }
+
+                      return ListView.builder(
+                        itemCount: accounts.length,
+                        itemBuilder: (context, index) {
+                          var acct = accounts[index];
+                          return AccountCard(account: acct);
+                        }
+                      );
+                    }
+                  );
+                }
+              )
+            )
+          ]
+        )
+      ),
+      bottomNavigationBar: FlutterBankBottomBar(),
+    );
+  }
+}
+
+class AccountCard extends StatelessWidget {
+  
+  final Account? account;
+  const AccountCard({ Key? key, this.account }) : super(key: key);
+  
+  @override
+  Widget build(BuildContext context) {
+
+    return Container(
+      height: 180,
+      padding: const EdgeInsets.all(20),
+      margin: const EdgeInsets.only(bottom: 20),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(25),
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 15,
+            offset: const Offset(0.0, 5.0)
+          )
+        ]
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Column(
+            children: [
+              Text(&#39;${account!.type!.toUpperCase()} ACCT&#39;, textAlign: TextAlign.left, 
+                style: const TextStyle(color: Utils.mainThemeColor, fontSize: 12)),
+              Text(&#39;**** ${account!.accountNumber}&#39;)
+            ]
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(&#39;Balance&#39;, textAlign: TextAlign.left, 
+                style: TextStyle(color: Utils.mainThemeColor, fontSize: 12)
+              ),
+              Row(
+                children: [
+                  const Icon(Icons.monetization_on, color: Utils.mainThemeColor, size: 30),
+                  Text(&#39;\$${account!.balance!.toStringAsFixed(2)}&#39;, 
+                    style: const TextStyle(color: Colors.black, fontSize: 35)
+                  )
+                ]
+              ),
+              Text(&#39;As of ${DateFormat.yMd().add_jm().format(DateTime.now())}&#39;, 
+                style: const TextStyle(fontSize: 10, color: Colors.grey)
+              )
+            ]
+          )
+        ]
+      )
+    );
+  }
+}
+
+class FlutterBankBottomBar extends StatelessWidget {
+  
+  @override
+  Widget build(BuildContext context) {
+
+    var bottomItems = Utils.getBottomBarItems(context);
+
+    return Container(
+      height: 100,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Utils.mainThemeColor.withOpacity(0.05),
+            blurRadius: 10,
+            offset: Offset.zero
+          )
+        ]
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: List.generate(
+          bottomItems.length, (index) {
+            FlutterBankBottomBarItem bottomItem = bottomItems[index];
+            
+            return Material(
+              color: Colors.transparent,
+              borderRadius: BorderRadius.circular(10),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                highlightColor: Utils.mainThemeColor.withOpacity(0.2),
+                splashColor: Utils.mainThemeColor.withOpacity(0.1),
+                onTap: () {
+                  bottomItem.action!();
+                },
+                child: Container(
+                  constraints: const BoxConstraints(minWidth: 80),
+                  padding: const EdgeInsets.all(10),
+                  child: Column(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Icon(bottomItem.icon, color: Utils.mainThemeColor, size: 20),
+                      Text(bottomItem.label!, 
+                        style: const TextStyle(color: Utils.mainThemeColor, fontSize: 10)
+                      )
+                    ]
+                  )
+                )
+              )
+            );
+          }
+        )
+      )
+    );
+  }
+}
+
+class FlutterBankLoading extends StatelessWidget {
+  
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: SizedBox(
+        width: 80,
+        height: 80,
+        child: Stack(
+          children: const [
+            Center(
+              child: SizedBox(
+                width: 80,
+                height: 80,
+                child: CircularProgressIndicator(
+                  strokeWidth: 8,
+                  valueColor: AlwaysStoppedAnimation&lt;Color&gt;(Utils.mainThemeColor)
+                )
+              )
+            ),
+            Center(
+              child: Icon(Icons.savings, color: Utils.mainThemeColor, size: 40)
+            )
+          ]
+        )
+      )
+    );
+  }
+}
+
+class FlutterBankDrawer extends StatelessWidget {
+  
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: Utils.mainThemeColor,
+      padding: const EdgeInsets.all(30),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.savings, color: Colors.white, size: 60),
+          const SizedBox(height: 40),
+          Material(
+            color: Colors.transparent,
+            child: TextButton(
+              style: ButtonStyle(
+                 backgroundColor: MaterialStateProperty.all&lt;Color&gt;(Colors.white.withOpacity(0.1))
+              ),
+              child: const Text(&#39;Sign Out&#39;, textAlign: TextAlign.left, 
+                style: TextStyle(color: Colors.white)
+              ),
+              onPressed: () {
+                Navigator.of(context).pop();
+                Utils.signOutDialog(context);
+              },
+            )
+          )
+        ]
+      )
+    );
+  }
+}
+
+class ExpenseCard extends StatelessWidget {
+  
+  final Expense? expense;
+  final Function? onDeleteExpense;
+  
+  const ExpenseCard({ Key? key, this.expense, this.onDeleteExpense })
+    : super(key: key);
+  
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      margin: const EdgeInsets.only(bottom: 20),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(25),
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 15,
+            offset: const Offset(0.0, 5.0)
+          )
+        ]
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(expense!.name!, textAlign: TextAlign.left, 
+                style: const TextStyle(fontSize: 12)),
+              Row(
+                children: [
+                  const Icon(Icons.monetization_on, 
+                    color: Utils.mainThemeColor, size: 20),
+                  Text(&#39;\$${expense!.amount!.toStringAsFixed(2)}&#39;, 
+                    style: const TextStyle(color: Colors.black, fontSize: 25))
+                ]
+              ),
+              Text(DateFormat.yMd().add_jm().format(DateTime.parse(expense!.timestamp!)),
+                style: const TextStyle(fontSize: 10, color: Colors.grey)
+              )
+            ]
+          ),
+          ClipOval(
+            child: Material(
+              color: Colors.transparent,
+              child: IconButton(
+                icon: const Icon(Icons.delete_forever, color: Colors.grey),
+                onPressed: () {
+                  onDeleteExpense!();
+                }
+              )
+            )
+          )
+        ]
+      )
+    );
+  }
+
+
+}
+
+// UTILITIES
+class Utils {
+  static const Color mainThemeColor = Color(0xFF8700C3);
+
+  static bool validateEmail(String? value) {
+    String pattern =
+        r&#34;^[a-zA-Z0-9.!#$%&amp;&#39;*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]&#34;
+        r&#34;{0,253}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]&#34;
+        r&#34;{0,253}[a-zA-Z0-9])?)*$&#34;;
+    RegExp regex = RegExp(pattern);
+    
+    return (value != null || value!.isNotEmpty || regex.hasMatch(value));
+  }
+
+  static Widget generateInputField(
+    String hintText, 
+    IconData iconData, 
+    TextEditingController controller, 
+    bool isPasswordField, 
+    Function onChanged) {
+
+    return Container(
+      padding: const EdgeInsets.all(5),
+      margin: const EdgeInsets.only(bottom: 20),
+      decoration: BoxDecoration(
+        color: Colors.grey.withOpacity(0.2),
+        borderRadius: BorderRadius.circular(50)
+      ),
+      child: TextField(
+        onChanged: (text) {
+          onChanged(text);
+        },
+        obscureText: isPasswordField,
+        obscuringCharacter: &#34;*&#34;,
+        decoration: InputDecoration(
+          prefixIcon: Icon(iconData, color: Utils.mainThemeColor),
+          border: InputBorder.none,
+          focusedBorder: InputBorder.none,
+          enabledBorder: InputBorder.none,
+          errorBorder: InputBorder.none,
+          disabledBorder: InputBorder.none,
+          contentPadding: const EdgeInsets.only(left: 15, bottom: 11, top: 11, right: 15),
+          hintText: hintText
+        ),
+        controller: controller,
+        style: const TextStyle(fontSize: 16),
+      )
+    );
+  }
+
+  static void signOutDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext ctx) {
+        return AlertDialog(
+          title: const Text(&#39;Flutter Savings Bank Logout&#39;, 
+          style: TextStyle(color: Utils.mainThemeColor)),
+          content: Container(
+            padding: const EdgeInsets.all(20),
+            child: const Text(&#39;Are you sure you want to log out of your account?&#39;)
+          ),
+          actions: [
+            TextButton(
+              child: const Text(&#39;Yes&#39;, style: TextStyle(color: Utils.mainThemeColor)),
+              onPressed: () async {
+                Navigator.of(ctx).pop();
+                LoginService loginService = Provider.of&lt;LoginService&gt;(ctx, listen: false);
+                await loginService.signOut();
+                Navigator.of(ctx).pop();
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  static List&lt;FlutterBankBottomBarItem&gt; getBottomBarItems(BuildContext context) {
+    return [
+      FlutterBankBottomBarItem(
+        label: &#39;Withdraw&#39;,
+        icon: Icons.logout,
+        action: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (context) =&gt; FlutterBankWithdrawal())
+          );
+        }
+      ),
+      FlutterBankBottomBarItem(
+        label: &#39;Deposit&#39;,
+        icon: Icons.login,
+        action: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (context) =&gt; FlutterBankDeposit())
+          );
+        }
+      ),
+      FlutterBankBottomBarItem(
+        label: &#39;Expenses&#39;,
+        icon: Icons.payments,
+        action: () {}
+      )
+    ];
+  }
+}
+
+// SERVICES 
+class LoginService extends ChangeNotifier {
+
+  String _userId = &#39;&#39;;
+  String _errorMessage = &#39;&#39;;
+  
+  String getErrorMessage() {
+    return _errorMessage;
+  }
+
+  void setLoginErrorMessage(String msg) {
+    _errorMessage = msg;
+    notifyListeners();
+  }
+
+  String getUserId() {
+    return _userId;
+  }
+
+  Future&lt;bool&gt; signOut() {
+    Completer&lt;bool&gt; signOutCompleter = Completer();
+
+    FirebaseAuth.instance.signOut().then(
+      (value) {
+        signOutCompleter.complete(true);
+      },
+      onError: (error) {
+        signOutCompleter.completeError({ &#39;error&#39;: error });
+      }
+    );
+
+    return signOutCompleter.future;
+  }
+
+  Future&lt;bool&gt; createUserWithEmailAndPassword(String email, String pwd) async {
+
+    try {
+      await FirebaseAuth.instance.createUserWithEmailAndPassword(email: email, password: pwd);
+      return true;
+      
+    } on FirebaseAuthException {
+      return false;
+    }
+  }
+
+  Future&lt;bool&gt; signInWithEmailAndPassword(String email, String password) async {
+    setLoginErrorMessage(&#39;&#39;);
+
+    try {
+      UserCredential credentials = await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+      
+      _userId = credentials.user!.uid;
+      
+      return true;
+      
+    } on FirebaseAuthException catch (ex) {
+      setLoginErrorMessage(&#39;Error during sign-in: &#39; + ex.message!);
+      return false;
+    }
+  }
+}
+
+class FlutterBankService extends ChangeNotifier {
+
+  Account? selectedAccount;
+  List&lt;Expense&gt; expenses = [];
+
+  void setSelectedAccount(Account? acct) {
+    selectedAccount = acct;
+    notifyListeners();
+  }
+
+  void resetSelections() {
+    setSelectedAccount(null);
+  }
+  
+  Account? getSelectedAccount() {
+    return selectedAccount;
+  }
+
+  void addExpense(BuildContext context) {
+    
+    LoginService loginService = Provider.of&lt;LoginService&gt;(context, listen: false);
+    String userId = loginService.getUserId();
+
+    CollectionReference expensesCollection = FirebaseFirestore.instance
+    .collection(&#39;accounts&#39;)
+    .doc(userId)
+    .collection(&#39;user_expenses&#39;);
+
+    expensesCollection.add({
+      &#39;amount&#39;: 100,
+      &#39;timestamp&#39;: DateTime.now().toIso8601String(),
+      &#39;name&#39;: &#39;Sample Expense&#39;
+    })
+    .then((value) =&gt; print(&#39;document added&#39;))
+    .catchError((error) =&gt; print(&#39;error during adding&#39;));
+  }
+
+  void deleteExpense(BuildContext context, String expenseId) {
+    
+    LoginService loginService = Provider.of&lt;LoginService&gt;(context, listen: false);
+    String userId = loginService.getUserId();
+
+    DocumentReference expenseToDelete = FirebaseFirestore
+    .instance.collection(&#39;accounts&#39;)
+    .doc(userId)
+    .collection(&#39;user_expenses&#39;)
+    .doc(expenseId);
+
+    expenseToDelete.delete()
+    .then((value) =&gt; print(&#39;document deleted&#39;))
+    .catchError((error) =&gt; print(&#39;error while deleting document&#39;));
+  }
+
+  Stream&lt;List&lt;Expense&gt;&gt; getExpenses(BuildContext context) {
+
+    LoginService loginService = Provider.of&lt;LoginService&gt;(context, listen: false);
+    String userId = loginService.getUserId();
+
+    var controller = StreamController&lt;List&lt;Expense&gt;&gt;();
+    
+    FirebaseFirestore.instance.
+    collection(&#39;accounts&#39;)
+    .doc(userId)
+    .collection(&#39;user_expenses&#39;)
+    .snapshots()
+    .listen((QuerySnapshot collection) {
+      expenses.clear();
+      for (var doc in collection.docs) {
+        var expenseJson = doc.data() as Map&lt;String, dynamic&gt;;
+        expenses.add(Expense.fromJson(expenseJson, doc.id));
+      }
+      
+      controller.add(expenses);
+    });
+
+    return controller.stream;
+  }
+
+  Future&lt;List&lt;Account&gt;&gt; getAccounts(BuildContext context) {
+
+    LoginService loginService = Provider.of&lt;LoginService&gt;(context, listen: false);
+    String userId = loginService.getUserId();
+
+    List&lt;Account&gt; accounts = [];
+
+    Completer&lt;List&lt;Account&gt;&gt; accountsCompleter = Completer();
+
+    FirebaseFirestore.instance
+      .collection(&#39;accounts&#39;)
+      .doc(userId)
+      .collection(&#39;user_accounts&#39;)
+      .get().then(
+        (QuerySnapshot collection) {
+
+          for(var doc in collection.docs) {
+              var acctDoc = doc.data() as Map&lt;String, dynamic&gt;;
+              var acct = Account.fromJson(acctDoc, doc.id);
+              accounts.add(acct);
+          }
+
+          Future.delayed(const Duration(seconds: 1), () {
+            accountsCompleter.complete(accounts);
+          });
+        },
+        onError: (error) {
+          accountsCompleter.completeError({ &#39;error&#39;: error });
+        }
+      );
+
+    return accountsCompleter.future;
+  }
+
+  Future&lt;bool&gt; performDeposit(BuildContext context) {
+    
+    Completer&lt;bool&gt; depositComplete = Completer();
+
+    LoginService loginService = Provider.of&lt;LoginService&gt;(context, listen: false);
+    String userId = loginService.getUserId();
+    
+    DepositService depositService = Provider.of&lt;DepositService&gt;(context, listen: false);
+    int amountToDeposit = depositService.amountToDeposit.toInt();
+
+    DocumentReference doc = 
+    FirebaseFirestore.instance
+      .collection(&#39;accounts&#39;)
+      .doc(userId)
+      .collection(&#39;user_accounts&#39;)
+      .doc(selectedAccount!.id!);
+
+    doc.update({
+      &#39;balance&#39;: selectedAccount!.balance! + amountToDeposit
+    }).then((value) {
+      depositService.resetDepositService();
+      depositComplete.complete(true);
+    }, onError: (error) {
+      depositComplete.completeError({ &#39;error&#39;: error });
+    });
+
+    return depositComplete.future;
+  }
+
+  Future&lt;bool&gt; performWithdrawal(BuildContext context) {
+    
+    Completer&lt;bool&gt; withdrawComplete = Completer();
+
+    LoginService loginService = Provider.of&lt;LoginService&gt;(context, listen: false);
+    String userId = loginService.getUserId();
+    
+    WithdrawalService wService = Provider.of&lt;WithdrawalService&gt;(context, listen: false);
+    int amountToWithdraw = wService.amountToWithdraw.toInt();
+
+    DocumentReference doc = 
+    FirebaseFirestore.instance
+      .collection(&#39;accounts&#39;)
+      .doc(userId)
+      .collection(&#39;user_accounts&#39;)
+      .doc(selectedAccount!.id!);
+
+      doc.update({
+        &#39;balance&#39;: selectedAccount!.balance! - amountToWithdraw
+      }).then((value) {
+        wService.resetWithdrawalService();
+        withdrawComplete.complete(true);
+      }, onError: (error) {
+        withdrawComplete.completeError({ &#39;error&#39;: error });
+      });
+
+    return withdrawComplete.future;
+  }
+}
+
+class DepositService extends ChangeNotifier {
+
+  double amountToDeposit = 0;
+  
+  void setAmountToDeposit(double amount) {
+    amountToDeposit = amount;
+    notifyListeners();
+  }
+  
+  void resetDepositService() {
+    amountToDeposit = 0;
+    notifyListeners();
+  }
+  
+  bool checkAmountToDeposit() {
+    return amountToDeposit &gt; 0;
+  }
+}
+
+class WithdrawalService extends ChangeNotifier {
+
+  double amountToWithdraw = 0;
+
+  void setAmountToWithdraw(double amount) {
+    amountToWithdraw = amount;
+    notifyListeners();
+  }
+  
+  void resetWithdrawalService() {
+    amountToWithdraw = 0;
+    notifyListeners();
+  }
+  
+  bool checkAmountToWithdraw() {
+    return amountToWithdraw &gt; 0;
+  }
+}
+
+
+// MODELS
+class Account {
+  
+  String? id;
+  String? type;
+  String? accountNumber;
+  double? balance;
+  
+  Account({ this.id, this.type, this.accountNumber, this.balance });
+  
+  factory Account.fromJson(Map&lt;String, dynamic&gt; json, String docId) {
+    return Account(
+      id: docId,
+      type: json[&#39;type&#39;],
+      accountNumber: json[&#39;account_number&#39;],
+      balance: json[&#39;balance&#39;]
+    );
+  }
+}
+
+class FlutterBankBottomBarItem {
+
+  String? label;
+  IconData? icon;
+  Function? action;
+
+  FlutterBankBottomBarItem({ this.label, this.icon, this.action });
+}
+
+class Expense {
+  
+  String? name;
+  double? amount;
+  String? timestamp;
+  String? id;
+  
+  Expense({ this.id, this.name, this.amount, this.timestamp });
+  
+  factory Expense.fromJson(Map&lt;String, dynamic&gt; json, String docId) {
+    return Expense(
+      id: docId,
+      name: json[&#39;name&#39;],
+      amount: json[&#39;amount&#39;],
+      timestamp: json[&#39;timestamp&#39;]
+    );
+  }
+}
+
+</code></pre>
+
+
+      </google-codelab-step>
+    
+  </google-codelab>
+
+  <script src="https://storage.googleapis.com/codelab-elements/native-shim.js"></script>
+  <script src="https://storage.googleapis.com/codelab-elements/custom-elements.min.js"></script>
+  <script src="https://storage.googleapis.com/codelab-elements/prettify.js"></script>
+  <script src="https://storage.googleapis.com/codelab-elements/codelab-elements.js"></script>
+  <script src="//support.google.com/inapp/api.js"></script>
+
+</body>
+</html>
