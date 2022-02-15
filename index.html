@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, minimum-scale=1.0, initial-scale=1.0, user-scalable=yes">
   <meta name="theme-color" content="#4F7DC9">
   <meta charset="UTF-8">
-  <title>Flutter Codelab / Coding Roulette: Full Stack Flutter Apps Workshop (pt.6): Cloud Firestore - Saving Data to Firestore: Withdrawal Feature</title>
+  <title>Flutter Codelab / Coding Roulette: Full Stack Flutter Apps Workshop (pt.7): Cloud Firestore Real-Time Data Streams: Expenses Feature</title>
   <link rel="stylesheet" href="//fonts.googleapis.com/css?family=Source+Code+Pro:400|Roboto:400,300,400italic,500,700|Roboto+Mono">
   <link rel="stylesheet" href="//fonts.googleapis.com/icon?family=Material+Icons">
   <link rel="stylesheet" href="https://storage.googleapis.com/codelab-elements/codelab-elements.css">
@@ -23,7 +23,7 @@
   <google-codelab-analytics gaid="UA-49880327-14"></google-codelab-analytics>
   <google-codelab codelab-gaid=""
                   id="flutter-codelab-cr3-7"
-                  title="Flutter Codelab / Coding Roulette: Full Stack Flutter Apps Workshop (pt.6): Cloud Firestore - Saving Data to Firestore: Withdrawal Feature"
+                  title="Flutter Codelab / Coding Roulette: Full Stack Flutter Apps Workshop (pt.7): Cloud Firestore Real-Time Data Streams: Expenses Feature"
                   environment="web"
                   feedback-link="https://romanjustcodes.web.app">
     
@@ -242,6 +242,7 @@
 <p>The cool thing is that as soon as we click on the delete icon, the data gets wiped out of Cloud Firestore and almost instantaneously the change gets reflected locally with lightning-fast speed. Love how it came out!</p>
 <aside class="special"><p>Make sure to take the whole workflow for a spin, by restoring the hard-coded user ids used as well as restoring the splash page back into the <strong>FlutterBankApp</strong> since these temporary changes were for development purposes only.</p>
 </aside>
+<p>Don&#39;t forget to add the way to navigate to this page in the <strong>Utils</strong> class, inside the <strong>FlutterBankBottomBarItem</strong> object corresponding to the &#34;Expenses&#34; label, inside the <strong>action</strong> callback, so it can navigate to the <strong>FlutterBankExpenses</strong> page we just created.</p>
 <p>And with that, we are fully done with this workshop! Kudos to you for making it all the way to this codeelab; I strongly encourage you to take this app, make it your own, and take it to the next level; hopefully you&#39;ll get inspired to continue building  your own app and eventually publish it.</p>
 <p>Thanks again and hope you&#39;ve learned a lot from this experience.</p>
 <p>See you on the next one!</p>
@@ -1674,7 +1675,11 @@ class Utils {
       FlutterBankBottomBarItem(
         label: &#39;Expenses&#39;,
         icon: Icons.payments,
-        action: () {}
+        action: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (context) =&gt; FlutterBankExpenses())
+          );
+        }
       )
     ];
   }
@@ -2015,6 +2020,15 @@ class Expense {
   <script src="https://storage.googleapis.com/codelab-elements/prettify.js"></script>
   <script src="https://storage.googleapis.com/codelab-elements/codelab-elements.js"></script>
   <script src="//support.google.com/inapp/api.js"></script>
-
+  <script src="https://code.jquery.com/jquery-3.6.0.slim.js" integrity="sha256-HwWONEZrpuoh951cQD1ov2HUK5zA5DwJ1DNUXaM6FsY=" crossorigin="anonymous"></script>
+  <script>
+    $(function() {
+      $('#done').removeAttr('href');
+      $('#done').css('cursor', 'pointer');
+      $('#done').click(function () { 
+        window.location.href = 'https://romanjustcodes.web.app/#/workshops';
+      });
+    });
+  </script>
 </body>
 </html>
